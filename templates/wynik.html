@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wynik wizualizacji</title>
+    <style>
+        :root {
+            --primary-color: #4285f4;
+            --secondary-color: #34a853;
+            --accent-color: #ea4335;
+            --light-color: #f8f9fa;
+            --dark-color: #343a40;
+            --border-radius: 8px;
+            --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f7fa;
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background-color: white;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+            text-align: center;
+        }
+
+        h2 {
+            color: var(--primary-color);
+            margin-bottom: 1.5rem;
+            font-weight: 600;
+        }
+
+        .visualization-container {
+            margin: 2rem 0;
+            padding: 1rem;
+            background-color: var(--light-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+        }
+
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: var(--border-radius);
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background-color: var(--primary-color);
+            color: white;
+            text-decoration: none;
+            border-radius: var(--border-radius);
+            font-weight: 500;
+            transition: background-color 0.3s, transform 0.2s;
+            margin-top: 1rem;
+        }
+
+        .btn:hover {
+            background-color: #3367d6;
+            transform: translateY(-1px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .info-box {
+            margin: 1rem 0;
+            padding: 1rem;
+            background-color: #e8f0fe;
+            border-left: 4px solid var(--primary-color);
+            border-radius: var(--border-radius);
+            text-align: left;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 1rem;
+                padding: 1.5rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>Wynik wizualizacji</h2>
+
+        <div class="info-box">
+            <p>Poniżej znajduje się wygenerowana wizualizacja danych. Możesz zapisać obraz klikając prawym przyciskiem
+                myszy i wybierając "Zapisz obraz jako".</p>
+        </div>
+
+        <div class="visualization-container">
+            <img src="{{ obraz }}" alt="Wizualizacja danych">
+        </div>
+
+        <a href="/" class="btn">Wróć do formularza</a>
+    </div>
+</body>
+
+</html>
