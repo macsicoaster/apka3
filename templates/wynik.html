@@ -7,20 +7,20 @@
     <title>Wynik wizualizacji</title>
     <style>
         :root {
-            --primary-color: #4285f4;
-            --secondary-color: #34a853;
-            --accent-color: #ea4335;
-            --light-color: #f8f9fa;
-            --dark-color: #343a40;
-            --border-radius: 8px;
-            --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            --primary-color: #0a84ff;
+            --secondary-color: #30d158;
+            --accent-color: #ff375f;
+            --light-color: #1c1c1e;
+            --dark-color: #000000;
+            --border-radius: 16px;
+            --box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             line-height: 1.6;
-            color: #333;
-            background-color: #f5f7fa;
+            color: #f2f2f7;
+            background-color: var(--dark-color);
             margin: 0;
             padding: 0;
         }
@@ -29,22 +29,23 @@
             max-width: 900px;
             margin: 2rem auto;
             padding: 2rem;
-            background-color: white;
+            background-color: var(--light-color);
             border-radius: var(--border-radius);
             box-shadow: var(--box-shadow);
             text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         h2 {
             color: var(--primary-color);
             margin-bottom: 1.5rem;
-            font-weight: 600;
+            font-weight: 700;
         }
 
         .visualization-container {
             margin: 2rem 0;
             padding: 1rem;
-            background-color: var(--light-color);
+            background-color: #2c2c2e;
             border-radius: var(--border-radius);
             box-shadow: var(--box-shadow);
         }
@@ -65,11 +66,23 @@
             font-weight: 500;
             transition: background-color 0.3s, transform 0.2s;
             margin-top: 1rem;
+            margin-right: 0.5rem;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn-secondary {
+            background-color: var(--secondary-color);
+            color: black;
         }
 
         .btn:hover {
-            background-color: #3367d6;
+            background-color: #0060df;
             transform: translateY(-1px);
+        }
+
+        .btn-secondary:hover {
+            background-color: #28c84c;
         }
 
         .btn:active {
@@ -79,10 +92,14 @@
         .info-box {
             margin: 1rem 0;
             padding: 1rem;
-            background-color: #e8f0fe;
+            background-color: rgba(10, 132, 255, 0.1);
             border-left: 4px solid var(--primary-color);
             border-radius: var(--border-radius);
             text-align: left;
+        }
+
+        .button-group {
+            margin-top: 1.5rem;
         }
 
         @media (max-width: 768px) {
@@ -90,8 +107,19 @@
                 margin: 1rem;
                 padding: 1.5rem;
             }
+
+            .button-group {
+                display: flex;
+                flex-direction: column;
+            }
+
+            .btn {
+                margin-right: 0;
+                margin-bottom: 0.5rem;
+            }
         }
     </style>
+
 </head>
 
 <body>
@@ -99,16 +127,54 @@
         <h2>Wynik wizualizacji</h2>
 
         <div class="info-box">
-            <p>Poniżej znajduje się wygenerowana wizualizacja danych. Możesz zapisać obraz klikając prawym przyciskiem
-                myszy i wybierając "Zapisz obraz jako".</p>
+            <p>Poniżej znajduje się wygenerowana wizualizacja danych. Możesz zapisać obraz lokalnie lub w chmurze Azure
+                Blob Storage.</p>
         </div>
 
         <div class="visualization-container">
             <img src="{{ obraz }}" alt="Wizualizacja danych">
         </div>
 
-        <a href="/" class="btn">Wróć do formularza</a>
+        <div class="button-group">
+            <a href="/" class="btn">Wróć do formularza</a>
+            <button onclick="saveToBlob()" class="btn btn-secondary">Zapisz do Blob Storage</a>
+        </div>
     </div>
+
+    <script>
+        function saveToBlob() {
+            const data = '{{ data }}';
+            const zmienna = '{{ zmienna }}';
+            const metoda = '{{ metoda }}';
+
+            if (!data) {
+                alert('Brak danych do zapisania');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('data', data);
+            formData.append('zmienna', zmienna);
+            formData.append('metoda', metoda);
+
+            fetch('/eksportuj-obraz-do-blob', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert(`Obraz został zapisany w Blob Storage jako: ${data.blob_name}`);
+                    } else {
+                        alert(`Błąd: ${data.message}`);
+                    }
+                })
+                .catch(error => {
+                    alert('Wystąpił błąd podczas zapisywania obrazu');
+                    console.error('Error:', error);
+                });
+        }
+    </script>
 </body>
 
 </html>

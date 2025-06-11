@@ -9,7 +9,14 @@ from pykrige.ok import OrdinaryKriging
 import numpy as np
 import seaborn as sns
 import os
-from datetime import date
+from datetime import date, datetime
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from azure.storage.blob import BlobServiceClient
+import io
+
+load_dotenv()
+
 app = Flask(__name__)
 
 MAPA_ZMIENNYCH = {
@@ -20,13 +27,154 @@ MAPA_ZMIENNYCH = {
 
 def connect_db():
     return psycopg2.connect(
-        host='silesiaairpostgresql.postgres.database.azure.com',
-        dbname='silesiaairdb',
-        port='5432',
-        user='silesiaair_admin',
-        password='Superbazadanych!',
-        sslmode='require'
+        host=os.getenv('DB_HOST'),
+        dbname=os.getenv('DB_NAME'),
+        port=os.getenv('DB_PORT'),
+        user=os.getenv('DB_USER'),
+        password=os.getenv('DB_PASSWORD'),
+        sslmode=os.getenv('DB_SSLMODE', 'require')
     )
+
+def get_db_config():
+    return {
+        'host': os.getenv('DB_HOST'),
+        'dbname': os.getenv('DB_NAME'),
+        'port': os.getenv('DB_PORT'),
+        'user': os.getenv('DB_USER'),
+        'password': os.getenv('DB_PASSWORD')
+    }
+
+def get_blob_config():
+    return {
+        'connection_string': os.getenv('AZURE_STORAGE_CONNECTION_STRING'),
+        'container_name': os.getenv('AZURE_STORAGE_CONTAINER_NAME')
+    }
+
+def zapisz_zjoinowana_tabele_do_blob(zmienna, blob_name=None):
+    
+    if zmienna not in MAPA_ZMIENNYCH:
+        raise ValueError(f"Nieznana zmienna: {zmienna}")
+
+    tabela, kolumna = MAPA_ZMIENNYCH[zmienna]
+
+    # utworz nazwe pliku
+    if blob_name is None:
+        blob_name = f"{zmienna}_export_{date.today()}.csv"
+
+    csv_filename = f"tmp_{blob_name}"
+
+    # polaczenie z baza
+    engine = create_engine(
+        f"postgresql+psycopg2://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@"
+        f"{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
+    )
+
+    # pobierz zjoinowana tabele
+    query = f"""
+        SELECT m.nazwa, m.lat, m.lon, p.data, p.{kolumna}
+        FROM miasta m
+        JOIN {tabela} p ON m.id = p.miasto_id
+    """
+
+    df = pd.read_sql_query(query, engine)
+    df.to_csv(csv_filename, index=False)
+
+    # upload do blob
+    blob_service_client = BlobServiceClient.from_connection_string(os.getenv('AZURE_STORAGE_CONNECTION_STRING'))
+    blob_client = blob_service_client.get_blob_client(
+        container=os.getenv('AZURE_STORAGE_CONTAINER_NAME'), 
+        blob=blob_name
+    )
+
+    with open(csv_filename, 'rb') as data:
+        blob_client.upload_blob(data, overwrite=True)
+
+    os.remove(csv_filename)
+
+    return blob_name
+
+def zapisz_obraz_do_blob(plt, zmienna, data_pomiaru, metoda):
+    
+    # generuj unikalną nazwę pliku
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    blob_name = f"{zmienna}_{metoda}_{data_pomiaru}_{timestamp}.png"
+    
+    # zapisz obraz do bufora w pamięci
+    img_buffer = io.BytesIO()
+    plt.savefig(img_buffer, format='png')
+    img_buffer.seek(0)
+    
+    # upload do bloba
+    blob_service_client = BlobServiceClient.from_connection_string(os.getenv('AZURE_STORAGE_CONNECTION_STRING'))
+    blob_client = blob_service_client.get_blob_client(
+        container=os.getenv('AZURE_STORAGE_CONTAINER_NAME'),
+        blob=blob_name
+    )
+    
+    blob_client.upload_blob(img_buffer, overwrite=True)
+    
+    return blob_name
+
+@app.route('/eksportuj-do-blob', methods=['POST'])
+def eksportuj_do_blob():
+    zmienna = request.form['zmienna']
+    try:
+        blob_name = zapisz_zjoinowana_tabele_do_blob(zmienna)
+        return jsonify({
+            'status': 'success',
+            'message': f'Dane zostały zapisane do Azure Blob Storage jako {blob_name}'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/eksportuj-obraz-do-blob', methods=['POST'])
+def eksportuj_obraz_do_blob():
+    data_pomiaru = request.form['data']
+    zmienna = request.form['zmienna']
+    metoda = request.form['metoda']
+    
+    conn = connect_db()
+    cur = conn.cursor()
+    
+    try:
+        plt.figure()
+        
+        if metoda == "mapa":
+            rysuj_mape_dla_daty(data_pomiaru, cur, zmienna)
+        elif metoda == "idw":
+            rysuj_mape_idw(data_pomiaru, cur, zmienna)
+        elif metoda == "kriging":
+            rysuj_mape_kriging(data_pomiaru, cur, zmienna)
+        elif metoda == "wykres":
+            rysuj_wykresy_dla_daty(data_pomiaru, cur, zmienna)
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Nieprawidłowa metoda wizualizacji'
+            }), 400
+        
+        # zapis do bloba
+        blob_name = zapisz_obraz_do_blob(plt, zmienna, data_pomiaru, metoda)
+        plt.close()
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Obraz został zapisany do Azure Blob Storage jako {blob_name}',
+            'blob_name': blob_name
+        })
+        
+    except Exception as e:
+        plt.close()
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route("/dane")
 def dane():
@@ -63,7 +211,6 @@ def rysuj_mape_dla_daty(data_pomiaru: str, cur, zmienna: str = "pm25"):
     ax.margins(0.1)
     plt.title(f"{zmienna.upper()} – {data_pomiaru}")
     plt.tight_layout()
-    plt.show()
 
 def rysuj_mape_idw(data_pomiaru: str, cur, zmienna: str = "pm25"):
     tabela, kolumna = MAPA_ZMIENNYCH[zmienna]
@@ -113,7 +260,6 @@ def rysuj_mape_idw(data_pomiaru: str, cur, zmienna: str = "pm25"):
     ax.set_title(f"Interpolacja {zmienna.upper()} metodą IDW – {data_pomiaru}")
     ax.set_axis_off()
     plt.tight_layout()
-    plt.show()
 
 def rysuj_mape_kriging(data_pomiaru: str, cur, zmienna: str = "pm25"):
     tabela, kolumna = MAPA_ZMIENNYCH[zmienna]
@@ -153,7 +299,6 @@ def rysuj_mape_kriging(data_pomiaru: str, cur, zmienna: str = "pm25"):
     ax.set_title(f"Interpolacja {zmienna.upper()} (Kriging) – {data_pomiaru}")
     ax.set_axis_off()
     plt.tight_layout()
-    plt.show()
 
 def rysuj_wykresy_dla_daty(data_pomiaru: str, cur, zmienna: str = "pm25"):
     tabela, kolumna = MAPA_ZMIENNYCH[zmienna]
@@ -185,9 +330,6 @@ def rysuj_wykresy_dla_daty(data_pomiaru: str, cur, zmienna: str = "pm25"):
     axs[2].set_ylabel("")
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])
-    plt.show()
-
-app = Flask(__name__)
 
 @app.route('/')
 def index():
@@ -195,45 +337,77 @@ def index():
 
 @app.route('/generuj', methods=['POST'])
 def generuj():
-    data = request.form['data']
-    zmienna = request.form['zmienna']
-    metoda = request.form['metoda']
+    data = request.form.get('data', '').strip()
+    zmienna = request.form.get('zmienna', 'pm25').strip()
+    metoda = request.form.get('metoda', 'mapa').strip()
 
-    conn = connect_db()
-    cur = conn.cursor()
+    if not data:
+        return "Data pomiaru jest wymagana", 400
+    if zmienna not in MAPA_ZMIENNYCH:
+        return "Nieprawidłowa zmienna", 400
 
-    # Ustaw ścieżkę zapisu
-    output_path = os.path.join("static", "wykres.png")
+    conn = None
+    cur = None
+    try:
+        conn = connect_db()
+        cur = conn.cursor()
 
-    # Zmieniamy matplotlib backend na 'Agg' (do generowania bez GUI)
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
+        tabela, kolumna = MAPA_ZMIENNYCH[zmienna]
+        cur.execute(f"""
+            SELECT EXISTS(
+                SELECT 1 FROM {tabela} 
+                WHERE data = %s LIMIT 1
+            )
+        """, (data,))
+        date_exists = cur.fetchone()[0]
+        
+        if not date_exists:
+            return f"Brak danych dla wybranej daty: {data}", 404
 
-    # Wybór funkcji
-    if metoda == "mapa":
-        rysuj_mape_dla_daty(data, cur, zmienna)
-    elif metoda == "idw":
-        rysuj_mape_idw(data, cur, zmienna)
-    elif metoda == "kriging":
-        rysuj_mape_kriging(data, cur, zmienna)
-    elif metoda == "wykres":
-        rysuj_wykresy_dla_daty(data, cur, zmienna)
-    else:
-        return "Nieprawidłowa metoda", 400
+        output_path = os.path.join("static", "wykres.png")
 
-    # Zapisuj ostatni wykres do pliku
-    plt.savefig(output_path)
-    plt.close()
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
 
-    cur.close()
-    conn.close()
-    return redirect(url_for('wynik'))
+        if metoda == "mapa":
+            rysuj_mape_dla_daty(data, cur, zmienna)
+        elif metoda == "idw":
+            rysuj_mape_idw(data, cur, zmienna)
+        elif metoda == "kriging":
+            rysuj_mape_kriging(data, cur, zmienna)
+        elif metoda == "wykres":
+            rysuj_wykresy_dla_daty(data, cur, zmienna)
+        else:
+            return "Nieprawidłowa metoda", 400
+
+        plt.savefig(output_path)
+        plt.close()
+
+        return redirect(url_for('wynik', data=data, zmienna=zmienna, metoda=metoda))
+
+    except Exception as e:
+        app.logger.error(f"Błąd podczas generowania wykresu: {str(e)}")
+        return f"Wystąpił błąd: {str(e)}", 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 @app.route('/wynik')
 def wynik():
-    # renderuje wykres zapisany jako statyczny plik
-    return render_template('wynik.html', obraz=url_for('static', filename='wykres.png'))
+    data = request.args.get('data', '')
+    zmienna = request.args.get('zmienna', 'pm25')
+    metoda = request.args.get('metoda', 'mapa')
+    
+    return render_template(
+        'wynik.html',
+        obraz=url_for('static', filename='wykres.png'),
+        data=data,
+        zmienna=zmienna,
+        metoda=metoda
+    )
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=os.getenv('FLASK_DEBUG', 'False') == 'True')
