@@ -1,2 +1,12 @@
-Flask==2.3.3
-gunicorn==21.2.0
+Flask
+psycopg2-binary
+geopandas
+pandas
+matplotlib
+shapely
+contextily
+scikit-learn
+pykrige
+numpy
+seaborn
+gunicorn
