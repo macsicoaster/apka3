@@ -10,3 +10,4 @@ pykrige
 numpy
 seaborn
 gunicorn
+dotenv
