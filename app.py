@@ -408,6 +408,3 @@ def wynik():
         zmienna=zmienna,
         metoda=metoda
     )
-
-if __name__ == '__main__':
-    app.run(debug=os.getenv('FLASK_DEBUG', 'False') == 'True')
