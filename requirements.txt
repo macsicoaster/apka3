@@ -11,3 +11,8 @@ numpy
 seaborn
 gunicorn
 dotenv
+sqlalchemy
+io
+os
+datetime
+azure-storage-blob
